@@ -1,7 +1,15 @@
+import { getServerSession } from "next-auth"
+import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getServerSession()
+
+  if (session) {
+    redirect("/dashboard")
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
       <div className="text-center mb-8">
@@ -19,4 +27,3 @@ export default function HomePage() {
     </div>
   )
 }
-

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { signIn } from "next-auth/react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,24 +22,22 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
       })
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to login")
+      if (result?.error) {
+        setError(result.error)
+        return
       }
 
       // Successful login
       router.push("/dashboard")
+      router.refresh() // Refresh to update session state
     } catch (err: any) {
-      setError(err.message)
+      setError("Failed to connect to server. Please try again.")
     } finally {
       setLoading(false)
     }

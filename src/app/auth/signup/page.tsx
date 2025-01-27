@@ -33,13 +33,19 @@ export default function SignupPage() {
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create account")
+        if (data.code === 'VALIDATION_ERROR' && data.details) {
+          // Show only the first validation error
+          setError(data.details[0].message)
+        } else {
+          setError(data.error)
+        }
+        return
       }
 
       // Successful signup - redirect to login
       router.push("/auth/login")
     } catch (err: any) {
-      setError(err.message)
+      setError("Failed to connect to server. Please try again.")
     } finally {
       setLoading(false)
     }
