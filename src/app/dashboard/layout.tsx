@@ -26,10 +26,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className=" bg-gray-800 p-4 flex justify-between items-center">
+      <header className="bg-gradient-to-r from-gray-800 to-gray-700 p-4 flex justify-between items-center fixed top-0 left-0 right-0 z-10 shadow-md">
         <span className="text-sm text-gray-400">
           Welcome, {session.user?.name || session.user?.email}
         </span>
+        <h1 className="text-4xl font-bold text-white">AI Tutor</h1>
         <Button
           variant="ghost"
           className="text-sm text-gray-400 hover:text-bg-gray-800"
@@ -38,7 +39,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           Sign out
         </Button>
       </header>
-      <main className="flex-grow">{children}</main>
+      <main className="flex-grow pt-16">{children}</main>
     </div>
   )
 }

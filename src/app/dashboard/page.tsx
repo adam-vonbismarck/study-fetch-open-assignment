@@ -41,9 +41,9 @@ export default function Dashboard() {
   const [pageNumber, setPageNumber] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [pageScale, setPageScale] = useState(1.0);
+  const [pdfDimensions, setPdfDimensions] = useState<{ width: number; height: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout>();
-  const [pdfUrl, setPdfUrl] = useState("")
 
   useEffect(() => {
     fetchStudies()
@@ -51,38 +51,49 @@ export default function Dashboard() {
 
   useEffect(() => {
     const updateScale = () => {
-      if (containerRef.current) {
-        const containerWidth = containerRef.current.offsetWidth - 64;
-        setPageScale(containerWidth / 800);
+      if (containerRef.current && pdfDimensions) {
+        const container = containerRef.current;
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        
+        // Calculate scale based on container dimensions
+        // Subtract some padding (40px) to keep it from touching the edges
+        const widthScale = (containerWidth - 40) / pdfDimensions.width;
+        const heightScale = (containerHeight - 100) / pdfDimensions.height;
+        
+        // Use the smaller scale to ensure the page fits both dimensions
+        const newScale = Math.min(widthScale, heightScale, 1.0);
+        setPageScale(newScale);
       }
     };
 
-    const debouncedUpdateScale = () => {
-      // Clear any existing timeout
+    // Create resize observer
+    const resizeObserver = new ResizeObserver((entries) => {
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
+      
+      // Debounce the resize event
+      resizeTimeoutRef.current = setTimeout(updateScale, 100);
+    });
 
-      // Set a new timeout
-      resizeTimeoutRef.current = setTimeout(() => {
-        updateScale();
-      }, 100); // 100ms debounce
-    };
+    // Start observing the container
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
 
-    // Initial scale
+    // Initial scale update
     updateScale();
 
-    // Add debounced resize listener
-    window.addEventListener('resize', debouncedUpdateScale);
-
-    // Cleanup
     return () => {
-      window.removeEventListener('resize', debouncedUpdateScale);
+      if (containerRef.current) {
+        resizeObserver.unobserve(containerRef.current);
+      }
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
     };
-  }, []);
+  }, [pdfDimensions]);
 
   const fetchStudies = async () => {
     try {
@@ -186,8 +197,10 @@ export default function Dashboard() {
     }
   }
 
+  const [pdfUrl, setPdfUrl] = useState("")
+
   return (
-    <div className="flex h-[calc(100vh-72px)] overflow-hidden" style={{height: "calc(100vh - 72px)"}}>
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
       {/* History Sidebar */}
       <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen} className="bg-gray-800">
         <CollapsibleContent className="w-64 p-4 h-full overflow-y-auto">
@@ -253,13 +266,19 @@ export default function Dashboard() {
                         scale={pageScale}
                         renderTextLayer={false}
                         renderAnnotationLayer={false}
+                        onLoadSuccess={(page) => {
+                          setPdfDimensions({
+                            width: page.originalWidth,
+                            height: page.originalHeight
+                          });
+                        }}
                       />
                     </div>
                   )}
                 </Document>
                 {numPages > 0 && (
                   <div
-                    className="flex justify-center items-center gap-4 mt-4 sticky bottom-0 bg-white p-2"
+                    className="flex justify-center items-center gap-4 mt-4 sticky bottom-0 p-2"
                     style={{gap: "1rem"}}>
                     <Button
                       onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}
