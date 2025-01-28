@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { PrismaClient } from "@prisma/client"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
+import {authOptions} from "@/app/api/auth/[...nextauth]/route";
 
 const prisma = new PrismaClient()
 
@@ -17,7 +18,7 @@ const s3Client = new S3Client({
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -43,8 +44,8 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // Generate the public URL for the uploaded file
-    const pdfUrl = `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.R2_BUCKET_NAME}/${key}`
+    // Generate the secure URL for the uploaded file using proper R2 configuration
+    const pdfUrl = `${process.env.R2_PUBLIC_DOMAIN}/${key}`
 
     // Create new study with the uploaded PDF
     const study = await prisma.study.create({
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession()
+    const session = await getServerSession(authOptions)
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }

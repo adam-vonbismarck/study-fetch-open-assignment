@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -8,8 +8,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronRight, ChevronLeft, Send, Upload } from "lucide-react"
 import { Document, Page, pdfjs } from "react-pdf"
 import { useSession } from "next-auth/react"
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
+// Configure PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type Message = {
   id: string
@@ -21,8 +24,9 @@ type Message = {
 type Study = {
   id: string
   title: string
-  pdfUrl: string
+  pdfKey: string
   pdfName: string
+  pdfUrl: string
   messages: Message[]
   createdAt: string
 }
@@ -36,10 +40,49 @@ export default function Dashboard() {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
+  const [pageScale, setPageScale] = useState(1.0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const resizeTimeoutRef = useRef<NodeJS.Timeout>();
+  const [pdfUrl, setPdfUrl] = useState("")
 
   useEffect(() => {
     fetchStudies()
   }, [])
+
+  useEffect(() => {
+    const updateScale = () => {
+      if (containerRef.current) {
+        const containerWidth = containerRef.current.offsetWidth - 64;
+        setPageScale(containerWidth / 800);
+      }
+    };
+
+    const debouncedUpdateScale = () => {
+      // Clear any existing timeout
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      
+      // Set a new timeout
+      resizeTimeoutRef.current = setTimeout(() => {
+        updateScale();
+      }, 100); // 100ms debounce
+    };
+
+    // Initial scale
+    updateScale();
+
+    // Add debounced resize listener
+    window.addEventListener('resize', debouncedUpdateScale);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', debouncedUpdateScale);
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const fetchStudies = async () => {
     try {
@@ -50,6 +93,17 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error("Error fetching studies:", error)
+    }
+  }
+
+  const handleStudySelect = async (study: Study) => {
+    try {
+      setPdfUrl(study.pdfUrl)
+      setCurrentStudy(study)
+      setPageNumber(1)
+      console.log(study.pdfUrl)
+    } catch (error) {
+      console.error("Error setting PDF URL:", error)
     }
   }
 
@@ -70,7 +124,9 @@ export default function Dashboard() {
       const data = await response.json()
       if (data.study) {
         setStudies([data.study, ...studies])
+        setPdfUrl(data.study.pdfUrl)
         setCurrentStudy(data.study)
+        setPageNumber(1)
       }
     } catch (error) {
       console.error("Error uploading file:", error)
@@ -81,11 +137,16 @@ export default function Dashboard() {
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages)
-    setPageNumber(1)
   }
 
   const changePage = (offset: number) => {
-    setPageNumber((prevPageNumber) => prevPageNumber + offset)
+    setPageNumber(prevPageNumber => {
+      const newPage = prevPageNumber + offset
+      if (newPage >= 1 && newPage <= (numPages || 1)) {
+        return newPage
+      }
+      return prevPageNumber
+    })
   }
 
   const sendMessage = async () => {
@@ -120,9 +181,9 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-[calc(100vh-72px)] overflow-hidden" style={{height: "calc(100vh - 72px)"}}>
       {/* History Sidebar */}
-      <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen} className="bg-gray-800 h-full">
+      <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen} className="bg-gray-800">
         <CollapsibleContent className="w-64 p-4 h-full overflow-y-auto">
           <h2 className="text-xl font-bold mb-4">Study History</h2>
           {studies.map((study) => (
@@ -131,7 +192,7 @@ export default function Dashboard() {
               className={`cursor-pointer p-2 rounded mb-2 ${
                 currentStudy?.id === study.id ? "bg-gray-700" : "hover:bg-gray-700"
               }`}
-              onClick={() => setCurrentStudy(study)}
+              onClick={() => handleStudySelect(study)}
             >
               {study.title}
             </div>
@@ -145,61 +206,101 @@ export default function Dashboard() {
       </Collapsible>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex h-full min-w-0">
+      <div className="flex-1 flex">
         {/* PDF Viewer */}
-        <div className="w-1/2 p-4 flex flex-col min-w-0">
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {currentStudy?.pdfUrl ? (
-              <Document file={currentStudy.pdfUrl} onLoadSuccess={onDocumentLoadSuccess}>
-                <Page pageNumber={pageNumber} />
-              </Document>
+        <div className="w-1/2 p-4 flex flex-col min-h-0" ref={containerRef}>
+          <div className="flex-1 overflow-auto relative">
+            {pdfUrl ? (
+              <>
+                <Document
+                  file={pdfUrl}
+                  onLoadError={(error) => {
+                    console.error('Error loading PDF:', error);
+                    console.log('Attempted URL:', pdfUrl);
+                  }}
+                  onLoadSuccess={(pdf) => {
+                    console.log('PDF loaded successfully');
+                    setNumPages(pdf.numPages);
+                  }}
+                  loading={
+                    <div className="flex justify-center items-center h-full">
+                      <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+                    </div>
+                  }
+                  error={
+                    <div className="flex justify-center items-center h-full text-red-500">
+                      Error loading PDF. Please try again.
+                    </div>
+                  }
+                  className="flex justify-center"
+                >
+                  {numPages > 0 && (
+                    <div className="w-full flex justify-center">
+                      <Page 
+                        pageNumber={pageNumber}
+                        scale={pageScale}
+                        renderTextLayer={false}
+                        renderAnnotationLayer={false}
+                      />
+                    </div>
+                  )}
+                </Document>
+                {numPages > 0 && (
+                  <div className="flex justify-center items-center gap-4 mt-4 sticky bottom-0 bg-white p-2">
+                    <Button
+                      onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}
+                      disabled={pageNumber <= 1}
+                      variant="outline"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span>
+                      Page {pageNumber} of {numPages}
+                    </span>
+                    <Button
+                      onClick={() => setPageNumber(Math.min(numPages, pageNumber + 1))}
+                      disabled={pageNumber >= numPages}
+                      variant="outline"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="flex items-center justify-center h-full">
                 <Card>
                   <CardContent className="flex flex-col items-center p-6">
                     <Upload className="w-12 h-12 mb-4 text-gray-400" />
-                    <p className="mb-2">Upload a PDF to start studying</p>
-                    <Input
-                      type="file"
-                      accept=".pdf"
-                      onChange={handleFileChange}
-                      className="max-w-xs"
-                      disabled={isLoading}
-                    />
+                    <p className="mb-2">No PDF uploaded</p>
+                    <Input type="file" accept=".pdf" onChange={handleFileChange} className="max-w-xs" />
                   </CardContent>
                 </Card>
               </div>
             )}
           </div>
-          {currentStudy?.pdfUrl && (
-            <div className="flex justify-between mt-4">
-              <Button onClick={() => changePage(-1)} disabled={pageNumber <= 1}>
-                Previous
-              </Button>
-              <p>
-                Page {pageNumber} of {numPages}
-              </p>
-              <Button onClick={() => changePage(1)} disabled={numPages !== null && pageNumber >= numPages}>
-                Next
-              </Button>
-            </div>
-          )}
         </div>
 
         {/* Chat Area */}
-        <div className="w-1/2 p-4 flex flex-col min-w-0">
+        <div className="w-1/2 p-4 flex flex-col">
           <Card className="flex-1 mb-4 overflow-hidden">
             <CardContent className="p-4 h-full overflow-y-auto">
               {currentStudy ? (
-                currentStudy.messages.map((message) => (
-                  <div key={message.id} className={`mb-2 ${message.role === "user" ? "text-right" : "text-left"}`}>
-                    <span
-                      className={`inline-block p-2 rounded ${message.role === "user" ? "bg-blue-600" : "bg-gray-700"}`}
-                    >
-                      {message.content}
-                    </span>
+                currentStudy.messages?.length ? (
+                  currentStudy.messages.map((message) => (
+                    <div key={message.id} className={`mb-2 ${message.role === "user" ? "text-right" : "text-left"}`}>
+                      <span
+                        className={`inline-block p-2 rounded ${message.role === "user" ? "bg-blue-600" : "bg-gray-700"}`}
+                      >
+                        {message.content}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-400">Start chatting about your PDF!</p>
                   </div>
-                ))
+                )
               ) : (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-gray-400">Upload a PDF to start a new study session</p>
