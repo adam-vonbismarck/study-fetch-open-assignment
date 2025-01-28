@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent } from "@/components/ui/card"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { ChevronRight, ChevronLeft, Send, Upload } from "lucide-react"
-import { Document, Page, pdfjs } from "react-pdf"
-import { useSession } from "next-auth/react"
+import {useEffect, useRef, useState} from "react"
+import {Button} from "@/components/ui/button"
+import {Input} from "@/components/ui/input"
+import {Card, CardContent} from "@/components/ui/card"
+import {Collapsible, CollapsibleContent} from "@/components/ui/collapsible"
+import {ChevronLeft, ChevronRight, PenSquare, Send, Upload} from "lucide-react"
+import {Document, Page, pdfjs} from "react-pdf"
+import {useSession} from "next-auth/react"
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
@@ -32,7 +32,7 @@ type Study = {
 }
 
 export default function Dashboard() {
-  const { data: session } = useSession()
+  const {data: session} = useSession()
   const [isHistoryOpen, setIsHistoryOpen] = useState(true)
   const [studies, setStudies] = useState<Study[]>([])
   const [currentStudy, setCurrentStudy] = useState<Study | null>(null)
@@ -62,7 +62,7 @@ export default function Dashboard() {
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
-      
+
       // Set a new timeout
       resizeTimeoutRef.current = setTimeout(() => {
         updateScale();
@@ -74,7 +74,7 @@ export default function Dashboard() {
 
     // Add debounced resize listener
     window.addEventListener('resize', debouncedUpdateScale);
-    
+
     // Cleanup
     return () => {
       window.removeEventListener('resize', debouncedUpdateScale);
@@ -135,7 +135,7 @@ export default function Dashboard() {
     }
   }
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+  const onDocumentLoadSuccess = ({numPages}: { numPages: number }) => {
     setNumPages(numPages)
   }
 
@@ -149,6 +149,12 @@ export default function Dashboard() {
     })
   }
 
+  const startNewChat = () => {
+    setCurrentStudy(null)
+    setPdfUrl("")
+    setInputMessage("")
+  }
+
   const sendMessage = async () => {
     if (!inputMessage.trim() || !currentStudy) return
 
@@ -158,7 +164,7 @@ export default function Dashboard() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ content: inputMessage }),
+        body: JSON.stringify({content: inputMessage}),
       })
 
       const data = await response.json()
@@ -185,7 +191,12 @@ export default function Dashboard() {
       {/* History Sidebar */}
       <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen} className="bg-gray-800">
         <CollapsibleContent className="w-64 p-4 h-full overflow-y-auto">
-          <h2 className="text-xl font-bold mb-4">Study History</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">Study History</h2>
+            <Button variant="ghost" size="icon" onClick={startNewChat} disabled={currentStudy == null}>
+              <PenSquare className="h-5 w-5" />
+            </Button>
+          </div>
           {studies.map((study) => (
             <div
               key={study.id}
@@ -224,7 +235,8 @@ export default function Dashboard() {
                   }}
                   loading={
                     <div className="flex justify-center items-center h-full">
-                      <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+                      <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"
+                      ></div>
                     </div>
                   }
                   error={
@@ -236,7 +248,7 @@ export default function Dashboard() {
                 >
                   {numPages > 0 && (
                     <div className="w-full flex justify-center">
-                      <Page 
+                      <Page
                         pageNumber={pageNumber}
                         scale={pageScale}
                         renderTextLayer={false}
@@ -246,23 +258,27 @@ export default function Dashboard() {
                   )}
                 </Document>
                 {numPages > 0 && (
-                  <div className="flex justify-center items-center gap-4 mt-4 sticky bottom-0 bg-white p-2">
+                  <div
+                    className="flex justify-center items-center gap-4 mt-4 sticky bottom-0 bg-white p-2"
+                    style={{gap: "1rem"}}>
                     <Button
                       onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}
                       disabled={pageNumber <= 1}
-                      variant="outline"
+                      variant="secondary"
                     >
-                      <ChevronLeft className="h-4 w-4" />
+                      <ChevronLeft className="h-4 w-4"/>
                     </Button>
-                    <span>
-                      Page {pageNumber} of {numPages}
-                    </span>
+                    <div>
+                      <span>
+                        Page {pageNumber} of {numPages}
+                      </span>
+                    </div>
                     <Button
                       onClick={() => setPageNumber(Math.min(numPages, pageNumber + 1))}
                       disabled={pageNumber >= numPages}
-                      variant="outline"
+                      variant="secondary"
                     >
-                      <ChevronRight className="h-4 w-4" />
+                      <ChevronRight className="h-4 w-4"/>
                     </Button>
                   </div>
                 )}
@@ -271,9 +287,9 @@ export default function Dashboard() {
               <div className="flex items-center justify-center h-full">
                 <Card>
                   <CardContent className="flex flex-col items-center p-6">
-                    <Upload className="w-12 h-12 mb-4 text-gray-400" />
+                    <Upload className="w-12 h-12 mb-4 text-gray-400"/>
                     <p className="mb-2">No PDF uploaded</p>
-                    <Input type="file" accept=".pdf" onChange={handleFileChange} className="max-w-xs" />
+                    <Input type="file" accept=".pdf" onChange={handleFileChange} className="max-w-xs"/>
                   </CardContent>
                 </Card>
               </div>
@@ -292,7 +308,7 @@ export default function Dashboard() {
                       <span
                         className={`inline-block p-2 rounded ${message.role === "user" ? "bg-blue-600" : "bg-gray-700"}`}
                       >
-                        {message.content}
+                {message.content}
                       </span>
                     </div>
                   ))
@@ -317,7 +333,7 @@ export default function Dashboard() {
               disabled={!currentStudy}
             />
             <Button onClick={sendMessage} disabled={!currentStudy || !inputMessage.trim()}>
-              <Send className="w-4 h-4 mr-2" />
+              <Send className="w-4 h-4 mr-2"/>
               Send
             </Button>
           </div>

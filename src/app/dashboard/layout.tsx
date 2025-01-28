@@ -32,7 +32,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </span>
         <Button
           variant="ghost"
-          className="text-sm text-gray-400 hover:text-white"
+          className="text-sm text-gray-400 hover:text-bg-gray-800"
           onClick={handleSignOut}
         >
           Sign out
