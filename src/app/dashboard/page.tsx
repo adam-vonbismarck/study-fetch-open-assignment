@@ -27,7 +27,7 @@ type Study = {
   pdfKey: string
   pdfName: string
   pdfUrl: string
-  messages: Message[]
+  messages?: Message[]
   createdAt: string
 }
 
@@ -167,35 +167,73 @@ export default function Dashboard() {
   }
 
   const sendMessage = async () => {
-    if (!inputMessage.trim() || !currentStudy) return
+    if (!inputMessage.trim() || !currentStudy) return;
 
     try {
-      const response = await fetch(`/api/study/${currentStudy.id}/message`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({content: inputMessage}),
-      })
+      setIsLoading(true);
 
-      const data = await response.json()
-      if (data.userMessage && data.aiMessage) {
-        const updatedStudy = {
-          ...currentStudy,
-          messages: [...currentStudy.messages, data.userMessage, data.aiMessage],
-        }
-        setCurrentStudy(updatedStudy)
-        setStudies(
-          studies.map((study) =>
-            study.id === currentStudy.id ? updatedStudy : study
-          )
-        )
-        setInputMessage("")
+      // Create a temporary message object for the user's message
+      const userMessage = {
+        id: Date.now().toString(),
+        content: inputMessage,
+        role: "user" as const,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Create a temporary message object for the AI's "thinking" message
+      const aiMessage = {
+        id: (Date.now() + 1).toString(),
+        content: "Thinking...",
+        role: "ai" as const,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Update the UI with both messages
+      const updatedStudy = {
+        ...currentStudy,
+        messages: [...(currentStudy.messages || []), userMessage, aiMessage],
+      };
+      setCurrentStudy(updatedStudy);
+      setInputMessage("");
+
+      // Prepare messages for the API
+      const messageHistory = (currentStudy.messages || []).map(msg => ({
+        role: msg.role === "ai" ? "assistant" : msg.role,
+        content: msg.content,
+      }));
+      messageHistory.push({ role: "user", content: inputMessage });
+
+      const response = await fetch(`/api/study/${currentStudy.studyId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: messageHistory }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send message');
       }
+
+      const data = await response.json();
+      
+      // Update the AI message with the actual response
+      const finalMessages = updatedStudy.messages.map(msg => 
+        msg.id === aiMessage.id ? { ...msg, content: data.content } : msg
+      );
+
+      const finalStudy = {
+        ...updatedStudy,
+        messages: finalMessages,
+      };
+
+      setCurrentStudy(finalStudy);
+      setStudies(studies.map((s) => (s.id === currentStudy.id ? finalStudy : s)));
+
     } catch (error) {
-      console.error("Error sending message:", error)
+      console.error("Error sending message:", error);
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
 
   const [pdfUrl, setPdfUrl] = useState("")
 
@@ -349,9 +387,9 @@ export default function Dashboard() {
               onChange={(e) => setInputMessage(e.target.value)}
               placeholder="Ask a question about the PDF..."
               className="flex-1"
-              disabled={!currentStudy}
+              disabled={!currentStudy || isLoading}
             />
-            <Button onClick={sendMessage} disabled={!currentStudy || !inputMessage.trim()}>
+            <Button onClick={sendMessage} disabled={!currentStudy || !inputMessage.trim() || isLoading}>
               <Send className="w-4 h-4 mr-2"/>
               Send
             </Button>
