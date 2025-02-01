@@ -1,7 +1,9 @@
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 import fs from 'fs';
-import { PDFDocument, rgb } from 'pdf-lib';
-import path from 'path';
+import {PDFDocument, rgb} from 'pdf-lib';
+import {Pinecone} from '@pinecone-database/pinecone';
+import OpenAI from "openai";
+import axios from "axios";
 
 export interface BBox {
   x: number;
@@ -21,6 +23,7 @@ export interface Passage {
   page_content: string;
   metadata: {
     title: string;
+    page: number;
     pid: string;
     annotations: string; // JSON-encoded array of annotation objects
   };
@@ -39,7 +42,7 @@ export interface Passage {
 export async function extractTextWithPositions(
   pdfData: Uint8Array
 ): Promise<TextPosition[]> {
-  const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+  const loadingTask = pdfjsLib.getDocument({data: pdfData});
   const pdfDoc = await loadingTask.promise;
   const textPositions: TextPosition[] = [];
   const numPages = pdfDoc.numPages;
@@ -48,7 +51,7 @@ export async function extractTextWithPositions(
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     const page = await pdfDoc.getPage(pageNum);
     // Get the viewport to know the page height (origin is bottom-left)
-    const viewport = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({scale: 1});
     const pageHeight = viewport.height;
     const textContent = await page.getTextContent();
 
@@ -107,7 +110,7 @@ export function createPassages(
   }> = [];
   let charCount = 0;
 
-  for (const { text, page, bbox, charCount: spanCharCount } of textPositions) {
+  for (const {text, page, bbox, charCount: spanCharCount} of textPositions) {
     // Add one for the space that will be added between spans.
     const newCharCount = charCount + spanCharCount + 1;
     if (newCharCount > charsPerPassage && currentPassage) {
@@ -115,6 +118,7 @@ export function createPassages(
         page_content: currentPassage.trim(),
         metadata: {
           title: "",
+          page: page,
           pid: String(passages.length),
           annotations: JSON.stringify(currentAnnotations),
         },
@@ -155,6 +159,7 @@ export function createPassages(
       page_content: currentPassage.trim(),
       metadata: {
         title: "",
+        page: textPositions[textPositions.length - 1].page,
         pid: String(passages.length),
         annotations: JSON.stringify(currentAnnotations),
       },
@@ -223,19 +228,63 @@ export async function highlightPassages(
   fs.writeFileSync(outputPath, modifiedPdfBytes);
 }
 
-async function main() {
-  const testPDFBuffer = fs.readFileSync('/Users/adamvonbismarck/Study' +
-    ' Fetch/study-fetch-open-assignment/src/lib/blstm_crf_paper.pdf');
+const openai = new OpenAI({
+  apiKey: "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",
+});
+const pc = new Pinecone({apiKey: "pcsk_3TBEuN_ofcSJpqNX5vmToFjueMudwZZdSCiNNzNJU8ie33TJdY1FKC91GLxg1Q3W4LEVd"});
 
-  const pdfUint8Array = new Uint8Array(testPDFBuffer);
-  const textPositions = await extractTextWithPositions(pdfUint8Array);
-  const passages = createPassages(textPositions, 1000);
-  console.log("First passage:", JSON.stringify(passages[0], null, 4));
-
-  await highlightPassages(passages, pdfUint8Array, "/Users/adamvonbismarck/Study" +
-    " Fetch/study-fetch-open-assignment/src/lib/highlighted.pdf");
-  console.log(`Highlighted PDF saved to ${"/Users/adamvonbismarck/Study Fetch/study-fetch-open-assignment/src/lib"}`);
+async function embed(docs: string[]) {
+  const embedding = await openai.embeddings.create({
+    model: 'text-embedding-ada-002',
+    input: docs,
+    encoding_format: "float",
+  });
+  return embedding.data.map(item => item.embedding);
 }
 
-// Uncomment the following line to run the example when executing this file directly.
-main();
+async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
+  // Fetch the PDF from the web as an ArrayBuffer.
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  // Convert the ArrayBuffer to a Uint8Array.
+  return new Uint8Array(response.data);
+}
+
+async function createEmbedding(pdfURL: string, studyId: string) {
+  // const testPDFBuffer = fs.readFileSync(pdfURL);
+  const pdfUint8Array = await fetchPdfBufferFromWeb(pdfURL);
+  const textPositions = await extractTextWithPositions(pdfUint8Array);
+  const passages = createPassages(textPositions, 1000);
+
+  const docEmbedded = await embed(passages.map(d => d.page_content));
+  const index = pc.Index("study-fetch");
+  const records = passages.map((d, i) => ({
+    id: d.metadata.pid,
+    values: docEmbedded[i],
+    metadata: {page: d.metadata.page, annotations: d.metadata.annotations, text: d.page_content},
+  }));
+  await index.namespace(studyId).upsert(records);
+
+  // await highlightPassages(passages, pdfUint8Array, "/Users/adamvonbismarck/Study" +
+  //   " Fetch/study-fetch-open-assignment/src/lib/highlighted.pdf");
+  // console.log(`Highlighted PDF saved to ${"/Users/adamvonbismarck/Study
+  // Fetch/study-fetch-open-assignment/src/lib"}`);
+}
+
+async function queryEmbedding(query: string, studyId: string) {
+  const index = pc.Index("study-fetch");
+  const queryEmbedded = await embed([query]);
+
+  const result = await index.namespace(studyId).query({
+    vector: queryEmbedded[0],
+    topK: 4,
+    includeMetadata: true
+  });
+
+  return result.matches.map((match: any) => ({
+    id: match.id,
+    score: match.score,
+    page: match.metadata.page,
+    annotations: match.metadata.annotations,
+    text: match.metadata.text,
+  }));
+}
