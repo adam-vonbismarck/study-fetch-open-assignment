@@ -16,6 +16,10 @@ import {pdfjs} from "react-pdf";
 // Configure PDF.js worker
 // pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
+import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 
 type Message = {
   id: string
@@ -226,7 +230,7 @@ export default function Dashboard() {
 
       const data = await response.json();
 
-      if (data.highlightedPdfUrl) {
+      if (data.highlightedPages && data.highlightedPages.length > 0) {
         setPdfUrl(data.highlightedPdfUrl);
       }
 
@@ -382,11 +386,36 @@ export default function Dashboard() {
                 currentStudy.messages?.length ? (
                   currentStudy.messages.map((message) => (
                     <div key={message.id} className={`mb-2 ${message.role === "user" ? "text-right" : "text-left"}`}>
-                      <span
-                        className={`inline-block p-2 rounded ${message.role === "user" ? "bg-blue-600" : "bg-gray-700"}`}
+                      <div
+                        className={`inline-block p-2 rounded ${
+                          message.role === "user" ? "bg-blue-600" : "bg-gray-700"
+                        } max-w-[80%] overflow-x-auto text-left`}
                       >
-                {message.content}
-                      </span>
+                        {message.role === "user" ? (
+                          <span>{message.content}</span>
+                        ) : (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                          components={{
+                            p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+                            ul: ({children}) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                            ol: ({children}) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
+                            li: ({children}) => <li className="mb-1">{children}</li>,
+                            code: ({inline, children}) => 
+                              inline ? (
+                                <code className="bg-gray-800 px-1 rounded">{children}</code>
+                              ) : (
+                                <pre className="bg-gray-800 p-2 rounded overflow-x-auto">
+                                  <code>{children}</code>
+                                </pre>
+                              )
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -408,6 +437,7 @@ export default function Dashboard() {
               placeholder="Ask a question about the PDF..."
               className="flex-1"
               disabled={!currentStudy || isLoading}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             />
             <Button onClick={sendMessage} disabled={!currentStudy || !inputMessage.trim() || isLoading}>
               <Send className="w-4 h-4 mr-2"/>

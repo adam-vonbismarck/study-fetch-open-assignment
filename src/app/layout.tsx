@@ -1,5 +1,6 @@
 import type {ReactNode} from "react"
 import "./globals.css"
+import 'katex/dist/katex.min.css'
 import {Providers} from "./providers"
 import {Inter} from "next/font/google";
 import { pdfjs } from 'react-pdf';
