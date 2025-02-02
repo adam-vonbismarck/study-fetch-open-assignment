@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { PrismaClient } from "@prisma/client"
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
-import {authOptions} from "@/app/api/auth/[...nextauth]/route";
+import {authOptions} from "@/lib/auth-options";
 
 const prisma = new PrismaClient()
 
