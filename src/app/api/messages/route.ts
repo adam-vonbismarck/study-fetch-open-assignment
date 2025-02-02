@@ -7,6 +7,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_TWO,
 });
 
+// @ts-ignore
 const pc = new Pinecone({apiKey: process.env.PINECONE_API_KEY});
 
 async function embed(docs: string[]) {

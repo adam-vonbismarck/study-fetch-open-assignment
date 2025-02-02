@@ -26,7 +26,7 @@ const s3Client = new S3Client({
  * @param inputPdfData The original PDF data as a Uint8Array.
  * @param outputPath Path where the highlighted PDF should be saved.
  */
-export async function highlightPassages(
+async function highlightPassages(
   passages: { id: any; score: any; page: any; annotations: any; text: any }[],
   inputPdfData: string,
   outputPath: Uint8Array<ArrayBuffer>
@@ -82,7 +82,7 @@ export async function highlightPassages(
   };
 }
 
-export async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
+async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
   // Fetch the PDF from the web as an ArrayBuffer.
   const response = await axios.get(url, { responseType: 'arraybuffer' });
   // Convert the ArrayBuffer to a Uint8Array.
