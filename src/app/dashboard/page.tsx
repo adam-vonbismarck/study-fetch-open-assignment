@@ -5,21 +5,26 @@ import {Button} from "@/components/ui/button"
 import {Input} from "@/components/ui/input"
 import {Card, CardContent} from "@/components/ui/card"
 import {Collapsible, CollapsibleContent} from "@/components/ui/collapsible"
-import {ChevronLeft, ChevronRight, PenSquare, Send, Upload} from "lucide-react"
-import {Document, Page} from "react-pdf"
+import {ChevronLeft, ChevronRight, Mic, MicOff, PenSquare, Send, Upload, Volume2, VolumeX} from "lucide-react"
+import {Document, Page, pdfjs} from "react-pdf"
 import {useSession} from "next-auth/react"
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 // import {createEmbedding} from "@/lib/pdf-tools";
 import {createEmbedding} from "@/lib/message-helpers";
-import {pdfjs} from "react-pdf";
-// Configure PDF.js worker
-// pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+// Configure PDF.js worker
+// pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
 
 type Message = {
   id: string
@@ -44,6 +49,9 @@ export default function Dashboard() {
   const [studies, setStudies] = useState<Study[]>([])
   const [currentStudy, setCurrentStudy] = useState<Study | null>(null)
   const [inputMessage, setInputMessage] = useState("")
+  const [isRecording, setIsRecording] = useState(false)
+  const [isSpeechEnabled, setIsSpeechEnabled] = useState(true)
+  const [wasLastMessageDictated, setWasLastMessageDictated] = useState(false)
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
@@ -51,6 +59,7 @@ export default function Dashboard() {
   const [pdfDimensions, setPdfDimensions] = useState<{ width: number; height: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout>();
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
 
   useEffect(() => {
     fetchStudies()
@@ -102,6 +111,27 @@ export default function Dashboard() {
     };
   }, [pdfDimensions]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+
+      recognitionRef.current.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0].transcript)
+          .join('');
+        setInputMessage(transcript);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+      };
+    }
+  }, []);
+
   const fetchStudies = async () => {
     try {
       const response = await fetch("/api/study")
@@ -120,6 +150,7 @@ export default function Dashboard() {
       setCurrentStudy(study)
       setPageNumber(1)
       console.log(study.pdfUrl)
+      setTimeout(scrollToBottom, 100);
     } catch (error) {
       console.error("Error setting PDF URL:", error)
     }
@@ -176,11 +207,38 @@ export default function Dashboard() {
     setInputMessage("")
   }
 
+  const toggleRecording = () => {
+    if (!recognitionRef.current) return;
+
+    if (isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      setWasLastMessageDictated(true);
+    } else {
+      setInputMessage('');
+      recognitionRef.current.start();
+      setIsRecording(true);
+    }
+  };
+
+  const toggleSpeech = () => {
+    setIsSpeechEnabled(!isSpeechEnabled);
+  };
+
+  const speakMessage = (text: string) => {
+    if (!isSpeechEnabled) return;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    window.speechSynthesis.speak(utterance);
+  };
+
   const sendMessage = async () => {
     if (!inputMessage.trim() || !currentStudy) return;
 
     try {
       setIsLoading(true);
+      const wasDictated = wasLastMessageDictated;
+      setWasLastMessageDictated(false);
 
       // Create a temporary message object for the user's message
       const userMessage = {
@@ -211,11 +269,11 @@ export default function Dashboard() {
         role: msg.role === "ai" ? "assistant" : msg.role,
         content: msg.content,
       }));
-      messageHistory.push({ role: "user", content: inputMessage });
+      messageHistory.push({role: "user", content: inputMessage});
 
       const response = await fetch(`/api/study/${currentStudy.id}/message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           messages: messageHistory,
           studyId: currentStudy.id
@@ -241,7 +299,7 @@ export default function Dashboard() {
 
       // Update the AI message with the actual response
       const finalMessages = updatedStudy.messages.map(msg =>
-        msg.id === aiMessage.id ? { ...msg, content: data.content } : msg
+        msg.id === aiMessage.id ? {...msg, content: data.content} : msg
       );
 
       const finalStudy = {
@@ -252,6 +310,11 @@ export default function Dashboard() {
       setCurrentStudy(finalStudy);
       setStudies(studies.map((s) => (s.id === currentStudy.id ? finalStudy : s)));
 
+      // If the user used dictation, speak the AI's response
+      if (wasDictated) {
+        speakMessage(data.content);
+      }
+
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
@@ -260,6 +323,13 @@ export default function Dashboard() {
   };
 
   const [pdfUrl, setPdfUrl] = useState("")
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  };
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -269,7 +339,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Study History</h2>
             <Button variant="ghost" size="icon" onClick={startNewChat} disabled={currentStudy == null}>
-              <PenSquare className="h-5 w-5" />
+              <PenSquare className="h-5 w-5"/>
             </Button>
           </div>
           {studies.map((study) => (
@@ -334,14 +404,15 @@ export default function Dashboard() {
                             height: page.originalHeight
                           });
                         }}
-                  />
+                      />
                     </div>
                   )}
                 </Document>
                 {numPages > 0 && (
                   <div
                     className="flex justify-center items-center gap-4 mt-4 sticky bottom-0 p-2"
-                    style={{gap: "1rem"}}>
+                    style={{gap: "1rem"}}
+                  >
                     <Button
                       onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}
                       disabled={pageNumber <= 1}
@@ -381,7 +452,7 @@ export default function Dashboard() {
         {/* Chat Area */}
         <div className="w-1/2 p-4 flex flex-col">
           <Card className="flex-1 mb-4 overflow-hidden">
-            <CardContent className="p-4 h-full overflow-y-auto">
+            <CardContent ref={chatContainerRef} className="p-4 h-full overflow-y-auto">
               {currentStudy ? (
                 currentStudy.messages?.length ? (
                   currentStudy.messages.map((message) => (
@@ -394,26 +465,26 @@ export default function Dashboard() {
                         {message.role === "user" ? (
                           <span>{message.content}</span>
                         ) : (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkMath]}
-                          rehypePlugins={[rehypeKatex]}
-                          components={{
-                            p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
-                            ul: ({children}) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
-                            ol: ({children}) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
-                            li: ({children}) => <li className="mb-1">{children}</li>,
-                            code: ({inline, children}) => 
-                              inline ? (
-                                <code className="bg-gray-800 px-1 rounded">{children}</code>
-                              ) : (
-                                <pre className="bg-gray-800 p-2 rounded overflow-x-auto">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkMath]}
+                            rehypePlugins={[rehypeKatex]}
+                            components={{
+                              p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+                              ul: ({children}) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                              ol: ({children}) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
+                              li: ({children}) => <li className="mb-1">{children}</li>,
+                              code: ({inline, children}) =>
+                                inline ? (
+                                  <code className="bg-gray-800 px-1 rounded">{children}</code>
+                                ) : (
+                                  <pre className="bg-gray-800 p-2 rounded overflow-x-auto">
                                   <code>{children}</code>
                                 </pre>
-                              )
-                          }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
+                                )
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
                         )}
                       </div>
                     </div>
@@ -436,10 +507,46 @@ export default function Dashboard() {
               onChange={(e) => setInputMessage(e.target.value)}
               placeholder="Ask a question about the PDF..."
               className="flex-1"
-              disabled={!currentStudy || isLoading}
+              disabled={!currentStudy || isLoading || isRecording}
               onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             />
-            <Button onClick={sendMessage} disabled={!currentStudy || !inputMessage.trim() || isLoading}>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={toggleRecording}
+                    disabled={!currentStudy || isLoading || !recognitionRef.current}
+                    variant={isRecording ? "destructive" : "secondary"}
+                  >
+                    {isRecording ? <MicOff className="w-4 h-4"/> : <Mic className="w-4 h-4"/>}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isRecording ? 'Stop dictation' : 'Start dictation'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={toggleSpeech}
+                    variant="secondary"
+                    className="px-2"
+                  >
+                    {isSpeechEnabled ? <Volume2 className="w-4 h-4"/> : <VolumeX className="w-4 h-4"/>}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isSpeechEnabled ? 'Disable text-to-speech' : 'Enable text-to-speech'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <Button onClick={() => {
+              sendMessage
+              setInputMessage("")
+            }} disabled={!currentStudy || !inputMessage.trim() || isLoading}
+            >
               <Send className="w-4 h-4 mr-2"/>
               Send
             </Button>
