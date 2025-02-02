@@ -230,6 +230,11 @@ export default function Dashboard() {
         setPdfUrl(data.highlightedPdfUrl);
       }
 
+      if (data.highlightedPages && data.highlightedPages.length > 0) {
+        setPageNumber(data.highlightedPages[0])
+      }
+      console.log(data.highlightedPages);
+
       // Update the AI message with the actual response
       const finalMessages = updatedStudy.messages.map(msg =>
         msg.id === aiMessage.id ? { ...msg, content: data.content } : msg

@@ -84,7 +84,7 @@ export async function getAIResponse(messages: { role: string; content: string }[
     body: JSON.stringify({ 
       action: 'getAIResponse',
       messages,
-      studyId 
+      studyId: studyId || null  
     }),
   });
 
@@ -94,7 +94,6 @@ export async function getAIResponse(messages: { role: string; content: string }[
   }
 
   const data = await response.json();
-  console.log('AI response:', data.result);
   return data.result;
 }
 

@@ -30,49 +30,56 @@ export async function highlightPassages(
   passages: { id: any; score: any; page: any; annotations: any; text: any }[],
   inputPdfData: string,
   outputPath: Uint8Array<ArrayBuffer>
-): Promise<Uint8Array> {
+): Promise<{ pdfBytes: Uint8Array, highlightedPages: number[] }> {
   // Load the PDF with pdf-lib.
   // load doc using pdf-js from url
+  const relevanceThreshold = 0.75;
   const getData = await fetchPdfBufferFromWeb(inputPdfData)
   const pdfDoc = await PDFDocument.load(getData);
   const pages = pdfDoc.getPages();
 
   if (passages.length === 0) {
     console.error("No passages to highlight.");
-    return;
+    return { pdfBytes: await pdfDoc.save(), highlightedPages: [] };
   }
-
-  // For testing, we highlight only the first passage.
-  const firstPassage = passages[0];
+  const relevantPassages = passages.filter(passage => passage.score >= relevanceThreshold);
+  const highlightedPages: number[] = [];
   // Parse the annotations JSON string.
-  const annotations: Array<{
-    page: number;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    color: string;
-  }> = JSON.parse(firstPassage.annotations);
+  for (const passage of relevantPassages) {
+    const annotations: Array<{
+      page: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      color: string;
+    }> = JSON.parse(passage.annotations);
 
-  // For each annotation, add a highlight (a rectangle with yellow border).
-  for (const annotation of annotations) {
-    const pageIndex = annotation.page - 1;
-    if (pageIndex < 0 || pageIndex >= pages.length) continue;
-    const page = pages[pageIndex];
+    // For each annotation in the passage, add a highlight
+    for (const annotation of annotations) {
+      const pageIndex = annotation.page - 1;
+      if (pageIndex < 0 || pageIndex >= pages.length) continue;
 
-    page.drawRectangle({
-      x: annotation.x,
-      y: annotation.y,
-      width: annotation.width,
-      height: annotation.height,
-      color: rgb(1, 1, 0), // Yellow fill.
-      opacity: 0.5, // Semi-transparent.
-    });
+      const page = pages[pageIndex];
+      page.drawRectangle({
+        x: annotation.x,
+        y: annotation.y,
+        width: annotation.width,
+        height: annotation.height,
+        color: rgb(1, 1, 0), // Yellow fill
+        opacity: 0.5, // Semi-transparent
+      });
+
+      if (!highlightedPages.includes(annotation.page)) {
+        highlightedPages.push(annotation.page);
+      }
+    }
   }
 
-  return pdfDoc.save();
-  // const modifiedPdfBytes = await pdfDoc.save();
-  // fs.writeFileSync(outputPath, modifiedPdfBytes);
+  return {
+    pdfBytes: await pdfDoc.save(),
+    highlightedPages: highlightedPages.sort((a, b) => a - b)
+  };
 }
 
 export async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
@@ -98,12 +105,30 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
       return NextResponse.json({ error: "Study not found" }, { status: 404 });
     }
 
+    // Save the user's message to the database
+    const userMessage = await prisma.message.create({
+      data: {
+        content: messages[messages.length - 1].content,
+        role: "user",
+        studyId: studyId,
+      }
+    });
+
     // Get relevant PDF context using vector search
     const lastUserMessage = messages[messages.length - 1].content;
     const relevantPassages = await queryEmbedding(lastUserMessage, studyId);
 
     // Get AI response with PDF context
     const aiResponse = await getAIResponse(messages, studyId);
+
+    // Save the AI's response to the database
+    const aiMessage = await prisma.message.create({
+      data: {
+        content: aiResponse.content,
+        role: "ai",
+        studyId: studyId,
+      }
+    });
 
     // Get the PDF buffer from the current URL
     const pdfResponse = await fetch(study.pdfUrl);
@@ -121,7 +146,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
     const putCommand = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: highlightedPdfKey,
-      Body: highlightedPdfBuffer,
+      Body: highlightedPdfBuffer.pdfBytes,
       ContentType: 'application/pdf'
     });
 
