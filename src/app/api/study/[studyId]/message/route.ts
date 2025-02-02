@@ -137,7 +137,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
 
     // Return both the AI response and the new PDF URL
     return NextResponse.json({ 
-      content: aiResponse,
+      content: aiResponse.content,
       highlightedPdfUrl: pdfUrl
     });
 
