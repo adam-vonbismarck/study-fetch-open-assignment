@@ -2,6 +2,7 @@ import type {ReactNode} from "react"
 import "./globals.css"
 import {Providers} from "./providers"
 import {Inter} from "next/font/google";
+import { pdfjs } from 'react-pdf';
 
 const inter = Inter({ subsets: ["latin"] })
 

@@ -6,14 +6,16 @@ import {Input} from "@/components/ui/input"
 import {Card, CardContent} from "@/components/ui/card"
 import {Collapsible, CollapsibleContent} from "@/components/ui/collapsible"
 import {ChevronLeft, ChevronRight, PenSquare, Send, Upload} from "lucide-react"
-import {Document, Page, pdfjs} from "react-pdf"
+import {Document, Page} from "react-pdf"
 import {useSession} from "next-auth/react"
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 // import {createEmbedding} from "@/lib/pdf-tools";
 import {createEmbedding} from "@/lib/message-helpers";
+import {pdfjs} from "react-pdf";
 // Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
 
 type Message = {
   id: string
@@ -56,12 +58,12 @@ export default function Dashboard() {
         const container = containerRef.current;
         const containerWidth = container.clientWidth;
         const containerHeight = container.clientHeight;
-        
+
         // Calculate scale based on container dimensions
         // Subtract some padding (40px) to keep it from touching the edges
         const widthScale = (containerWidth - 40) / pdfDimensions.width;
         const heightScale = (containerHeight - 100) / pdfDimensions.height;
-        
+
         // Use the smaller scale to ensure the page fits both dimensions
         const newScale = Math.min(widthScale, heightScale, 1.0);
         setPageScale(newScale);
@@ -73,7 +75,7 @@ export default function Dashboard() {
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
-      
+
       // Debounce the resize event
       resizeTimeoutRef.current = setTimeout(updateScale, 100);
     });
@@ -136,8 +138,8 @@ export default function Dashboard() {
       const data = await response.json()
       if (data.study) {
         // Store PDF in vector database
-        await createEmbedding(data.study.pdfUrl, data.study.id);
-        
+        await createEmbedding(data.study.pdfUrl, data.study.id, window.location.origin);
+
         setStudies([data.study, ...studies])
         setPdfUrl(data.study.pdfUrl)
         setCurrentStudy(data.study)
@@ -225,9 +227,9 @@ export default function Dashboard() {
       if (data.highlightedPdfUrl) {
         setPdfUrl(data.highlightedPdfUrl);
       }
-      
+
       // Update the AI message with the actual response
-      const finalMessages = updatedStudy.messages.map(msg => 
+      const finalMessages = updatedStudy.messages.map(msg =>
         msg.id === aiMessage.id ? { ...msg, content: data.content } : msg
       );
 
@@ -321,7 +323,7 @@ export default function Dashboard() {
                             height: page.originalHeight
                           });
                         }}
-                      />
+                  />
                     </div>
                   )}
                 </Document>

@@ -1,18 +1,8 @@
 "use client";
 
-// import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import fs from 'fs';
 import {PDFDocument, rgb} from 'pdf-lib';
-import {Pinecone} from '@pinecone-database/pinecone';
-import OpenAI from "openai";
 import axios from "axios";
-
 import { pdfjs } from 'react-pdf';
-
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
 
 export interface BBox {
   x: number;
@@ -49,15 +39,21 @@ export interface Passage {
  * @returns An array of TextPosition objects.
  */
 export async function extractTextWithPositions(
-  pdfData: Uint8Array
+  pdfData: Uint8Array, window: string
 ): Promise<TextPosition[]> {
-  const loadingTask = pdfjs.getDocument({data: pdfData});
-  const pdfDoc = await loadingTask.promise;
+  // const pdfJS: any = await import('pdfjs-dist/build/pdf');
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    window + '/pdf.worker.min.mjs';
+
+  console.log('Test1');
+  const loadingTask = await pdfjs.getDocument({data: pdfData}).promise;
+  const pdfDoc = loadingTask
   const textPositions: TextPosition[] = [];
   const numPages = pdfDoc.numPages;
 
   // Iterate through each page.
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    console.log('Test2');
     const page = await pdfDoc.getPage(pageNum);
     // Get the viewport to know the page height (origin is bottom-left)
     const viewport = page.getViewport({scale: 1});
@@ -106,7 +102,7 @@ export async function extractTextWithPositions(
 export async function createPassages(
   textPositions: TextPosition[],
   charsPerPassage = 1000
-): Passage[] {
+): Promise<Passage[]> {
   const passages: Passage[] = [];
   let currentPassage = "";
   let currentAnnotations: Array<{
@@ -180,71 +176,12 @@ export async function createPassages(
   return passages;
 }
 
-/**
- * Highlights the annotations from the first passage in the PDF and saves a new PDF file.
- *
- * This function uses pdf-lib to load the original PDF, draw semi-transparent
- * yellow rectangles over each annotation in the first passage, and then save the modified PDF.
- *
- * @param passages An array of Passage objects (as produced by createPassages).
- * @param inputPdfData The original PDF data as a Uint8Array.
- * @param outputPath Path where the highlighted PDF should be saved.
- */
-export async function highlightPassages(
-  passages: { id: any; score: any; page: any; annotations: any; text: any }[],
-  inputPdfData: Promise<Uint8Array>,
-  outputPath: Uint8Array<ArrayBuffer>
-): Promise<Uint8Array> {
-  // Load the PDF with pdf-lib.
-  const pdfDoc = await PDFDocument.load(inputPdfData);
-  const pages = pdfDoc.getPages();
-
-  if (passages.length === 0) {
-    console.error("No passages to highlight.");
-    return;
-  }
-
-  // For testing, we highlight only the first passage.
-  const firstPassage = passages[0];
-  // Parse the annotations JSON string.
-  const annotations: Array<{
-    page: number;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    color: string;
-  }> = JSON.parse(firstPassage.metadata.annotations);
-
-  // For each annotation, add a highlight (a rectangle with yellow border).
-  for (const annotation of annotations) {
-    const pageIndex = annotation.page - 1;
-    if (pageIndex < 0 || pageIndex >= pages.length) continue;
-    const page = pages[pageIndex];
-
-    page.drawRectangle({
-      x: annotation.x,
-      y: annotation.y,
-      width: annotation.width,
-      height: annotation.height,
-      color: rgb(1, 1, 0), // Yellow fill.
-      opacity: 0.5, // Semi-transparent.
-    });
-  }
-
-  return pdfDoc.save();
-  // const modifiedPdfBytes = await pdfDoc.save();
-  // fs.writeFileSync(outputPath, modifiedPdfBytes);
+async function main() {
+  const pdfUrl = 'https://pub-1e6fc0a0389b459094600e681adfc15d.r2.dev/6796f5b0983066d8e8d83b3c/1738506145584-first-chapter.pdf';
+  const pdfBuffer = await fetchPdfBufferFromWeb(pdfUrl);
+  const textPositions = await extractTextWithPositions(pdfBuffer);
+  const passages = await createPassages(textPositions, 1000);
+  console.log('Passages:', passages);
 }
 
-
-
-
-
-export async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
-  // Fetch the PDF from the web as an ArrayBuffer.
-  const response = await axios.get(url, { responseType: 'arraybuffer' });
-  // Convert the ArrayBuffer to a Uint8Array.
-  return new Uint8Array(response.data);
-}
-
+// main()

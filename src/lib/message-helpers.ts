@@ -1,104 +1,114 @@
 import {PrismaClient} from "@prisma/client";
-import OpenAI from "openai";
-import {createPassages, extractTextWithPositions, fetchPdfBufferFromWeb} from "@/lib/pdf-tools";
-import {Pinecone} from "@pinecone-database/pinecone";
+import {createPassages, extractTextWithPositions} from "@/lib/pdf-tools";
+import axios from "axios";
 
 const prisma = new PrismaClient();
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_TWO,
-});
-const pc = new Pinecone({apiKey: process.env.PINECONE_API_KEY});
+
+// Helper function to get the base URL
+function getBaseUrl() {
+  if (typeof window !== 'undefined') {
+    // Browser should use relative path
+    return '';
+  }
+  // Server should use full URL
+  return process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+}
 
 export async function queryEmbedding(query: string, studyId: string) {
-  const index = pc.Index("study-fetch");
-  const queryEmbedded = await embed([query]);
-
-  const result = await index.namespace(studyId).query({
-    vector: queryEmbedded[0],
-    topK: 4,
-    includeMetadata: true
+  const baseUrl = getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      action: 'queryEmbedding',
+      query,
+      studyId 
+    }),
   });
 
-  return result.matches.map((match: any) => ({
-    id: match.id,
-    score: match.score,
-    page: match.metadata.page,
-    annotations: match.metadata.annotations,
-    text: match.metadata.text,
-  }));
+  if (!response.ok) {
+    console.error('Query embedding error:', await response.text());
+    throw new Error('Failed to query embedding');
+  }
+
+  const data = await response.json();
+  return data.result;
 }
 
-async function embed(docs: string[]) {
-  const embedding = await openai.embeddings.create({
-    model: 'text-embedding-ada-002',
-    input: docs,
-    encoding_format: "float",
-  });
-  return embedding.data.map(item => item.embedding);
+export async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
+  // Fetch the PDF from the web as an ArrayBuffer.
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  // Convert the ArrayBuffer to a Uint8Array.
+  return new Uint8Array(response.data);
 }
 
-export async function createEmbedding(pdfURL: string, studyId: string) {
-  // const testPDFBuffer = fs.readFileSync(pdfURL);
+export async function createEmbedding(pdfURL: string, studyId: string, window:  string) {
+
   const pdfUint8Array = await fetchPdfBufferFromWeb(pdfURL);
-  const textPositions = await extractTextWithPositions(pdfUint8Array);
-  const passages = createPassages(textPositions, 1000);
+  console.log('Creating embedding for:', pdfUint8Array);
+  const textPositions = await extractTextWithPositions(pdfUint8Array, window);
+  const passages = await createPassages(textPositions, 1000);
 
-  const docEmbedded = await embed(passages.map(d => d.page_content));
-  const index = pc.Index("study-fetch");
-  const records = passages.map((d, i) => ({
-    id: d.metadata.pid,
-    values: docEmbedded[i],
-    metadata: {page: d.metadata.page, annotations: d.metadata.annotations, text: d.page_content},
-  }));
-  await index.namespace(studyId).upsert(records);
+  console.log('Passages:', passages);
 
-  // await highlightPassages(passages, pdfUint8Array, "/Users/adamvonbismarck/Study" +
-  //   " Fetch/study-fetch-open-assignment/src/lib/highlighted.pdf");
-  // console.log(`Highlighted PDF saved to ${"/Users/adamvonbismarck/Study
-  // Fetch/study-fetch-open-assignment/src/lib"}`);
+  const baseUrl = getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      action: 'createEmbedding',
+      passages,
+      studyId,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error('Create embedding error:', await response.text());
+    throw new Error('Failed to create embedding');
+  }
+
+  return response.json();
 }
 
 export async function getAIResponse(messages: { role: string; content: string }[], studyId?: string) {
-  let systemMessage = "You are a helpful AI assistant.";
-
-  if (studyId) {
-    // Get relevant PDF context
-    const lastUserMessage = messages.filter(m => m.role === "user").pop();
-    if (lastUserMessage) {
-      const pdfContext = await queryEmbedding(lastUserMessage.content, studyId);
-      if (pdfContext && pdfContext.length > 0) {
-        const contextText = pdfContext.map(p => p.text).join('\n\n');
-        systemMessage = `You are a helpful AI assistant. Use the following PDF context to help answer the question: \n\n${contextText}\n\nIf the context doesn't help answer the question directly, use your general knowledge but mention that the answer isn't specifically from the PDF.`;
-      }
-    }
-  }
-
-  const formattedMessages = [
-    { role: "system", content: systemMessage },
-    ...messages.map(msg => ({
-      role: msg.role === "user" ? "user" : "assistant",
-      content: msg.content
-    }))
-  ];
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4-turbo-2024-04-09",
-    messages: formattedMessages,
+  const baseUrl = getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      action: 'getAIResponse',
+      messages,
+      studyId 
+    }),
   });
 
-  return response.choices[0].message.content;
+  if (!response.ok) {
+    console.error('AI response error:', await response.text());
+    throw new Error('Failed to get AI response');
+  }
+
+  const data = await response.json();
+  return data.result;
 }
 
 export async function saveMessages({ messages }: { messages: { content: string; role: string; studyId: string }[] }) {
-  return await Promise.all(
-    messages.map(async (message) => {
-      return prisma.message.create({
-        data: {
-          content: message.content,
-          role: message.role,
-          studyId: message.studyId,
-        },
-      });
-    })
-  );
+  try {
+    const result = await prisma.message.createMany({
+      data: messages.map((message) => ({
+        content: message.content,
+        role: message.role,
+        studyId: message.studyId,
+      })),
+    });
+    return result;
+  } catch (error) {
+    console.error('Error saving messages:', error);
+    throw error;
+  }
 }

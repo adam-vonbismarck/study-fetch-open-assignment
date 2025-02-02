@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {getAIResponse, queryEmbedding} from "@/lib/message-helpers";
-import {highlightPassages, fetchPdfBufferFromWeb} from "@/lib/pdf-tools";
 import { PrismaClient } from "@prisma/client";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import {PDFDocument, rgb} from 'pdf-lib';
+import axios from "axios";
 
 const prisma = new PrismaClient();
 const s3Client = new S3Client({
@@ -14,6 +15,72 @@ const s3Client = new S3Client({
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
 })
+
+/**
+ * Highlights the annotations from the first passage in the PDF and saves a new PDF file.
+ *
+ * This function uses pdf-lib to load the original PDF, draw semi-transparent
+ * yellow rectangles over each annotation in the first passage, and then save the modified PDF.
+ *
+ * @param passages An array of Passage objects (as produced by createPassages).
+ * @param inputPdfData The original PDF data as a Uint8Array.
+ * @param outputPath Path where the highlighted PDF should be saved.
+ */
+export async function highlightPassages(
+  passages: { id: any; score: any; page: any; annotations: any; text: any }[],
+  inputPdfData: string,
+  outputPath: Uint8Array<ArrayBuffer>
+): Promise<Uint8Array> {
+  // Load the PDF with pdf-lib.
+  // load doc using pdf-js from url
+  const getData = await fetchPdfBufferFromWeb(inputPdfData)
+  const pdfDoc = await PDFDocument.load(getData);
+  const pages = pdfDoc.getPages();
+
+  if (passages.length === 0) {
+    console.error("No passages to highlight.");
+    return;
+  }
+
+  // For testing, we highlight only the first passage.
+  const firstPassage = passages[0];
+  // Parse the annotations JSON string.
+  const annotations: Array<{
+    page: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    color: string;
+  }> = JSON.parse(firstPassage.annotations);
+
+  // For each annotation, add a highlight (a rectangle with yellow border).
+  for (const annotation of annotations) {
+    const pageIndex = annotation.page - 1;
+    if (pageIndex < 0 || pageIndex >= pages.length) continue;
+    const page = pages[pageIndex];
+
+    page.drawRectangle({
+      x: annotation.x,
+      y: annotation.y,
+      width: annotation.width,
+      height: annotation.height,
+      color: rgb(1, 1, 0), // Yellow fill.
+      opacity: 0.5, // Semi-transparent.
+    });
+  }
+
+  return pdfDoc.save();
+  // const modifiedPdfBytes = await pdfDoc.save();
+  // fs.writeFileSync(outputPath, modifiedPdfBytes);
+}
+
+export async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
+  // Fetch the PDF from the web as an ArrayBuffer.
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  // Convert the ArrayBuffer to a Uint8Array.
+  return new Uint8Array(response.data);
+}
 
 export async function POST(req: NextRequest, props: { params: Promise<{ studyId: string }> }) {
   const params = await props.params;
@@ -45,7 +112,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
     // Highlight relevant passages in the PDF
     const highlightedPdfBuffer  = await highlightPassages(
       relevantPassages,
-      fetchPdfBufferFromWeb(currPdfUrl),
+      currPdfUrl,
       new Uint8Array(pdfBuffer)
     );
 
