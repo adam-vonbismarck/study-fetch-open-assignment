@@ -6,7 +6,7 @@
   "scripts": {
     "copy-assets": "cp ./node_modules/pdfjs-dist/build/pdf.worker.min.mjs ./public/",
     "dev": "npm run copy-assets && next dev --turbopack",
-    "build": "npm run copy-assets && next build",
+    "build": "npm run copy-assets && prisma generate && next build",
     "start": "next start",
     "lint": "next lint"
   },
