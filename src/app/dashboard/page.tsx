@@ -10,7 +10,8 @@ import {Document, Page, pdfjs} from "react-pdf"
 import {useSession} from "next-auth/react"
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
-
+// import {createEmbedding} from "@/lib/pdf-tools";
+import {createEmbedding} from "@/lib/message-helpers";
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
@@ -134,6 +135,9 @@ export default function Dashboard() {
 
       const data = await response.json()
       if (data.study) {
+        // Store PDF in vector database
+        await createEmbedding(data.study.pdfUrl, data.study.id);
+        
         setStudies([data.study, ...studies])
         setPdfUrl(data.study.pdfUrl)
         setCurrentStudy(data.study)
@@ -203,10 +207,13 @@ export default function Dashboard() {
       }));
       messageHistory.push({ role: "user", content: inputMessage });
 
-      const response = await fetch(`/api/study/${currentStudy.studyId}/message`, {
+      const response = await fetch(`/api/study/${currentStudy.id}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messageHistory }),
+        body: JSON.stringify({
+          messages: messageHistory,
+          studyId: currentStudy.id
+        }),
       });
 
       if (!response.ok) {
@@ -214,6 +221,10 @@ export default function Dashboard() {
       }
 
       const data = await response.json();
+
+      if (data.highlightedPdfUrl) {
+        setPdfUrl(data.highlightedPdfUrl);
+      }
       
       // Update the AI message with the actual response
       const finalMessages = updatedStudy.messages.map(msg => 
