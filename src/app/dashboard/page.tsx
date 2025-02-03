@@ -148,6 +148,7 @@ export default function Dashboard() {
 
   const handleStudySelect = async (study: Study) => {
     try {
+      pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
       setPdfUrl(study.pdfUrl)
       setCurrentStudy(study)
       setPageNumber(1)
