@@ -1,5 +1,3 @@
-"use server"
-
 import {PrismaClient} from "@prisma/client";
 import {createPassages, extractTextWithPositions} from "@/lib/pdf-tools";
 import axios from "axios";
