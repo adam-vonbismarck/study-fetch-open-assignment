@@ -359,6 +359,7 @@ export default function Dashboard() {
               className={`cursor-pointer p-2 rounded mb-2 ${
                 currentStudy?.id === study.id ? "bg-gray-700" : "hover:bg-gray-700"
               }`}
+              style={{hyphens: "auto"}}
               onClick={() => handleStudySelect(study)}
             >
               {study.title}
