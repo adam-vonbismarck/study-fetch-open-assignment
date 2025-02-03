@@ -11,12 +11,26 @@ const openai = new OpenAI({
 const pc = new Pinecone({apiKey: process.env.PINECONE_API_KEY});
 
 async function embed(docs: string[]) {
-  const embedding = await openai.embeddings.create({
-    model: 'text-embedding-ada-002',
-    input: docs,
-    encoding_format: "float",
-  });
-  return embedding.data.map(item => item.embedding);
+  if (!docs || docs.length === 0) {
+    throw new Error('No documents provided for embedding');
+  }
+
+  try {
+    const embedding = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: docs,
+      encoding_format: "float",
+    });
+    
+    if (!embedding.data || embedding.data.length === 0) {
+      throw new Error('No embeddings returned from OpenAI');
+    }
+    
+    return embedding.data.map(item => item.embedding);
+  } catch (error: any) {
+    console.error('Error generating embeddings:', error);
+    throw new Error(`Failed to generate embeddings: ${error.message}`);
+  }
 }
 
 async function queryEmbeddingHandler(query: string, studyId: string) {
@@ -85,8 +99,25 @@ export async function POST(req: Request) {
 
       case 'queryEmbedding': {
         const {query, studyId} = data;
-        const result = await queryEmbeddingHandler(query, studyId);
-        return NextResponse.json({result});
+        
+        if (!query || typeof query !== 'string') {
+          return NextResponse.json({ error: 'Invalid or missing query parameter' }, { status: 400 });
+        }
+        
+        if (!studyId || typeof studyId !== 'string') {
+          return NextResponse.json({ error: 'Invalid or missing studyId parameter' }, { status: 400 });
+        }
+
+        try {
+          const result = await queryEmbeddingHandler(query, studyId);
+          return NextResponse.json({result});
+        } catch (error: any) {
+          console.error('Error querying embeddings:', error);
+          return NextResponse.json(
+            { error: `Failed to query embeddings: ${error.message}` },
+            { status: 500 }
+          );
+        }
       }
 
       case 'createEmbedding': {
