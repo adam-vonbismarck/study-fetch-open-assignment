@@ -52,17 +52,6 @@ async function queryEmbeddingHandler(query: string, studyId: string) {
   }));
 }
 
-export async function OPTIONS(request: Request) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-}
-
 export async function POST(req: Request) {
   try {
     const {action, ...data} = await req.json();
@@ -105,11 +94,7 @@ export async function POST(req: Request) {
           model: "gpt-4o-mini",
           messages: augmentedMessages,
         });
-        const result = NextResponse.json({result: response.choices[0].message});
-        result.headers.set('Access-Control-Allow-Origin', '*');
-        result.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        result.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-        return result;
+        return NextResponse.json({result: response.choices[0].message});
       }
 
       case 'queryEmbedding': {
@@ -125,21 +110,13 @@ export async function POST(req: Request) {
 
         try {
           const result = await queryEmbeddingHandler(query, studyId);
-          const response = NextResponse.json({result});
-          response.headers.set('Access-Control-Allow-Origin', '*');
-          response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-          response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-          return response;
+          return NextResponse.json({result});
         } catch (error: any) {
           console.error('Error querying embeddings:', error);
-          const response = NextResponse.json(
-            { error: `Failed to query embeddings: ${error.message}` },
-            { status: 500 }
+          return NextResponse.json(
+            {error: `Failed to query embeddings: ${error.message}`},
+            {status: 500}
           );
-          response.headers.set('Access-Control-Allow-Origin', '*');
-          response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-          response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-          return response;
         }
       }
 
@@ -162,28 +139,16 @@ export async function POST(req: Request) {
 
         await index.namespace(studyId).upsert(records);
 
-        const response = NextResponse.json({
+        return NextResponse.json({
           success: true
         });
-        response.headers.set('Access-Control-Allow-Origin', '*');
-        response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-        return response;
       }
 
       default:
-        const response = NextResponse.json({error: 'Invalid action'}, {status: 400});
-        response.headers.set('Access-Control-Allow-Origin', '*');
-        response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-        return response;
+        return NextResponse.json({error: 'Invalid action'}, {status: 400});
     }
   } catch (error) {
     console.error('API error:', error);
-    const response = NextResponse.json({error: 'Failed to process request'}, {status: 500});
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-    return response;
+    return NextResponse.json({error: 'Failed to process request'}, {status: 500});
   }
 }
