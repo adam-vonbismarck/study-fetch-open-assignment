@@ -1,7 +1,6 @@
 import {PrismaClient} from "@prisma/client";
 import {createPassages, extractTextWithPositions} from "@/lib/pdf-tools";
 import axios from "axios";
-import * as process from "node:process";
 
 const prisma = new PrismaClient();
 
@@ -15,7 +14,8 @@ function getBaseUrl() {
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}`;
   }
-  return 'http://localhost:3000';
+  console.log('process.env.NEXT_PUBLIC_BASE_URL:', process.env.VERCEL_URL);
+  return process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000';
 }
 
 export async function queryEmbedding(query: string, studyId: string) {
