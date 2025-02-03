@@ -17,7 +17,7 @@ function getBaseUrl() {
     return `https://${process.env.VERCEL_URL}`;
   }
   console.log('process.env.NEXT_PUBLIC_BASE_URL:', process.env.VERCEL_URL);
-  return process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000';
+  return 'http://localhost:3000';
 }
 
 export async function queryEmbedding(query: string, studyId: string) {
