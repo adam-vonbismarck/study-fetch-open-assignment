@@ -60,6 +60,8 @@ export default function Dashboard() {
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout>();
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const [pdfUrl, setPdfUrl] = useState("")
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchStudies()
@@ -170,15 +172,24 @@ export default function Dashboard() {
         body: formData,
       })
 
+
+
       const data = await response.json()
       if (data.study) {
-        // Store PDF in vector database
-        await createEmbedding(data.study.pdfUrl, data.study.id, window.location.origin);
+        pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
+        // First set the study in state and load PDF
+        await handleStudySelect(data.study)
 
-        setStudies([data.study, ...studies])
-        setPdfUrl(data.study.pdfUrl)
-        setCurrentStudy(data.study)
-        setPageNumber(1)
+        // Then update the studies list
+        setStudies(prevStudies => [data.study, ...prevStudies])
+
+        // Finally create the embedding
+        try {
+          await createEmbedding(data.study.pdfUrl, data.study.id, window.location.origin);
+          console.log('PDF embedded successfully');
+        } catch (embedError) {
+          console.error('Error creating embedding:', embedError);
+        }
       }
     } catch (error) {
       console.error("Error uploading file:", error)
@@ -322,8 +333,7 @@ export default function Dashboard() {
     }
   };
 
-  const [pdfUrl, setPdfUrl] = useState("")
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
@@ -332,8 +342,9 @@ export default function Dashboard() {
   };
 
   return (
+
+
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
-      {/* History Sidebar */}
       <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen} className="bg-gray-800">
         <CollapsibleContent className="w-64 p-4 h-full overflow-y-auto">
           <div className="flex justify-between items-center mb-4">

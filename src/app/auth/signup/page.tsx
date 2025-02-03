@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { signIn } from "next-auth/react"
 
 export default function SignupPage() {
   const [name, setName] = useState("")
@@ -42,8 +43,21 @@ export default function SignupPage() {
         return
       }
 
-      // Successful signup - redirect to login
-      router.push("/auth/login")
+      // Successful signup - now automatically log in
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      })
+
+      if (result?.error) {
+        setError("Account created but failed to log in. Please try logging in manually.")
+        router.push("/auth/login")
+        return
+      }
+
+      // Successfully logged in - redirect to dashboard
+      router.push("/dashboard")
     } catch (err: any) {
       setError("Failed to connect to server. Please try again.")
     } finally {

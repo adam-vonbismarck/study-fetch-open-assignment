@@ -169,7 +169,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
   } catch (error) {
     console.error("Error in message route:", error);
     return NextResponse.json(
-      { error: "Failed to process message" },
+      { error: "Failed to process message", errorDetails: error },
       { status: 500 }
     );
   }
