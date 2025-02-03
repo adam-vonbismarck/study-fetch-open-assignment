@@ -94,6 +94,7 @@ export async function getAIResponse(messages: { role: string; content: string }[
   }
 
   const data = await response.json();
+  console.log('AI response:', data);
   return data.result;
 }
 
