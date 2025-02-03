@@ -23,5 +23,7 @@ export const config = {
   matcher: [
     '/dashboard/:path*',
     '/api/protected/:path*',
+    // Do not protect the messages API endpoint
+    '/((?!api/messages)api/:path*)'
   ]
 }
