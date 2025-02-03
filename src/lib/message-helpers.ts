@@ -11,11 +11,11 @@ function getBaseUrl() {
     return '';
   }
   // Server should use full URL
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-  if (process.env.NEXT_PUBLIC_VERCEL_URL) {
-    return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  // if (process.env.VERCEL_URL) {
+  //   return `https://${process.env.VERCEL_URL}`;
+  // }
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return `https://${process.env.NEXT_PUBLIC_BASE_URL}`;
   }
   console.log('process.env.NEXT_PUBLIC_BASE_URL:', process.env.VERCEL_URL);
   return 'http://localhost:3000';
