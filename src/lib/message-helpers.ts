@@ -109,9 +109,8 @@ export async function getAIResponse(messages: { role: string; content: string }[
     throw new Error('Failed to get AI response');
   }
 
-  const data = await response.json();
-  console.log('AI response:', data);
-  return data.result;
+  // Return the response stream directly
+  return response;
 }
 
 export async function saveMessages({ messages }: { messages: { content: string; role: string; studyId: string }[] }) {

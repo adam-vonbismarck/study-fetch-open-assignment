@@ -7,6 +7,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import {PDFDocument, rgb} from 'pdf-lib';
 import axios from "axios";
+import { TextDecoder } from 'util';
 
 const prisma = new PrismaClient();
 const s3Client = new S3Client({
@@ -17,6 +18,8 @@ const s3Client = new S3Client({
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
 })
+
+const decoder = new TextDecoder('utf-8');
 
 /**
  * Highlights the annotations from the first passage in the PDF and saves a new PDF file.
@@ -93,11 +96,12 @@ async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
 
 export async function POST(req: NextRequest, props: { params: Promise<{ studyId: string }> }) {
   const params = await props.params;
+  const encoder = new TextEncoder();
+
   try {
     const { messages } = await req.json();
     const studyId = params.studyId;
 
-    // Get the study to access the PDF URL
     const study = await prisma.study.findUnique({
       where: { id: studyId },
     });
@@ -108,7 +112,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
     }
 
     // Save the user's message to the database
-    const userMessage = await prisma.message.create({
+    await prisma.message.create({
       data: {
         content: messages[messages.length - 1].content,
         role: "user",
@@ -119,53 +123,107 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
     // Get relevant PDF context using vector search
     const lastUserMessage = messages[messages.length - 1].content;
     const relevantPassages = await queryEmbedding(lastUserMessage, studyId);
+    console.log('Relevant passages:', relevantPassages);
+    // Create a readable stream for the response
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          // Get AI response stream
+          const aiResponse = await getAIResponse(messages, studyId);
+          const reader = aiResponse.body?.getReader();
+          if (!reader) {
+            throw new Error('No reader available from AI response');
+          }
 
-    // Get AI response with PDF context
-    const aiResponse = await getAIResponse(messages, studyId);
+          let fullContent = "";
 
-    // Save the AI's response to the database
-    const aiMessage = await prisma.message.create({
-      data: {
-        content: aiResponse.content,
-        role: "ai",
-        studyId: studyId,
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+
+              // Decode and parse the chunk
+              const text = decoder.decode(value);
+              const events = text.split('\n').filter(Boolean);
+
+              for (const event of events) {
+                try {
+                  const data = JSON.parse(event);
+                  if (data.type === 'content') {
+                    fullContent += data.value;
+                    // Forward the content chunk to the client
+                    const streamData = JSON.stringify({ type: 'content', value: data.value }) + '\n';
+                    controller.enqueue(encoder.encode(streamData));
+                  }
+                } catch (e) {
+                  console.error('Error parsing event:', e);
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          // Save the AI message after streaming is complete
+          await prisma.message.create({
+            data: {
+              content: fullContent,
+              role: "ai",
+              studyId: studyId,
+            }
+          });
+
+          // Process PDF highlighting
+          const pdfResponse = await fetch(study.pdfUrl);
+          const pdfBuffer = await pdfResponse.arrayBuffer();
+
+          const { pdfBytes, highlightedPages } = await highlightPassages(
+            relevantPassages,
+            currPdfUrl,
+            new Uint8Array(pdfBuffer)
+          );
+
+          // Upload highlighted PDF to S3
+          const highlightedPdfKey = `${studyId}/highlighted-${Date.now()}.pdf`;
+          const putCommand = new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: highlightedPdfKey,
+            Body: pdfBytes,
+            ContentType: 'application/pdf'
+          });
+
+          await s3Client.send(putCommand);
+
+          const pdfUrl = `${process.env.R2_PUBLIC_DOMAIN}/${highlightedPdfKey}`;
+
+          // Update study with new highlighted PDF URL
+          await prisma.study.update({
+            where: { id: studyId },
+            data: { pdfUrl: pdfUrl }
+          });
+
+          // Send the PDF metadata
+          const metadataChunk = JSON.stringify({
+            type: 'metadata',
+            highlightedPdfUrl: pdfUrl,
+            highlightedPages: highlightedPages
+          }) + '\n';
+          controller.enqueue(encoder.encode(metadataChunk));
+          
+          controller.close();
+        } catch (error) {
+          console.error("Error in streaming response:", error);
+          controller.error(error);
+        }
       }
     });
 
-    // Get the PDF buffer from the current URL
-    const pdfResponse = await fetch(study.pdfUrl);
-    const pdfBuffer = await pdfResponse.arrayBuffer();
-
-    // Highlight relevant passages in the PDF
-    const { pdfBytes, highlightedPages }  = await highlightPassages(
-      relevantPassages,
-      currPdfUrl,
-      new Uint8Array(pdfBuffer)
-    );
-    // Upload highlighted PDF to S3
-    const highlightedPdfKey = `${studyId}/highlighted-${Date.now()}.pdf`;
-    const putCommand = new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: highlightedPdfKey,
-      Body: pdfBytes,
-      ContentType: 'application/pdf'
-    });
-
-    await s3Client.send(putCommand);
-
-    const pdfUrl = `${process.env.R2_PUBLIC_DOMAIN}/${highlightedPdfKey}`
-
-    // Update study with new highlighted PDF URL
-    await prisma.study.update({
-      where: { id: studyId },
-      data: { pdfUrl: pdfUrl }
-    });
-
-    // Return both the AI response and the new PDF URL
-    return NextResponse.json({ 
-      content: aiResponse.content,
-      highlightedPdfUrl: pdfUrl,
-      highlightedPages: highlightedPages
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
 
   } catch (error) {

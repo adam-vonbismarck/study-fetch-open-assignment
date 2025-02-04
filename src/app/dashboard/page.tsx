@@ -265,10 +265,10 @@ export default function Dashboard() {
         createdAt: new Date().toISOString(),
       };
 
-      // Create a temporary message object for the AI's "thinking" message
+      // Create a temporary message object for the AI's message
       const aiMessage = {
         id: (Date.now() + 1).toString(),
-        content: "Thinking...",
+        content: "",
         role: "ai" as const,
         createdAt: new Date().toISOString(),
       };
@@ -297,42 +297,70 @@ export default function Dashboard() {
         }),
       });
 
-      console.log(messageHistory);
-
       if (!response.ok) {
         throw new Error('Failed to send message');
       }
 
-      const data = await response.json();
+      // Read the streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-      console.log(data);
-
-      if (data.highlightedPages && data.highlightedPages.length > 0) {
-        pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
-        setPdfUrl(data.highlightedPdfUrl);
+      if (!reader) {
+        throw new Error('No reader available');
       }
 
-      if (data.highlightedPages && data.highlightedPages.length > 0) {
-        setPageNumber(data.highlightedPages[0])
+      let accumulatedContent = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          // Decode the chunk and split by newlines to handle multiple events
+          const text = decoder.decode(value);
+          const events = text.split('\n').filter(Boolean);
+
+          for (const event of events) {
+            try {
+              const data = JSON.parse(event);
+              
+              if (data.type === 'content') {
+                accumulatedContent += data.value;
+                // Update the AI message with the accumulated content
+                const finalMessages = updatedStudy.messages.map(msg =>
+                  msg.id === aiMessage.id ? {...msg, content: accumulatedContent} : msg
+                );
+                const finalStudy = {
+                  ...updatedStudy,
+                  messages: finalMessages,
+                };
+                setCurrentStudy(finalStudy);
+                setStudies(studies.map((s) => (s.id === currentStudy.id ? finalStudy : s)));
+                scrollToBottom();
+              } else if (data.type === 'metadata') {
+                // Handle PDF updates
+                if (data.highlightedPdfUrl) {
+                  pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
+                  setPdfUrl(data.highlightedPdfUrl);
+                }
+                if (data.highlightedPages?.length > 0) {
+                  setPageNumber(data.highlightedPages[0]);
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing event:', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error reading stream:', error);
+      } finally {
+        reader.releaseLock();
       }
-      console.log(data.highlightedPages);
-
-      // Update the AI message with the actual response
-      const finalMessages = updatedStudy.messages.map(msg =>
-        msg.id === aiMessage.id ? {...msg, content: data.content} : msg
-      );
-
-      const finalStudy = {
-        ...updatedStudy,
-        messages: finalMessages,
-      };
-
-      setCurrentStudy(finalStudy);
-      setStudies(studies.map((s) => (s.id === currentStudy.id ? finalStudy : s)));
 
       // If the user used dictation, speak the AI's response
       if (wasDictated) {
-        speakMessage(data.content);
+        speakMessage(accumulatedContent);
       }
 
     } catch (error) {

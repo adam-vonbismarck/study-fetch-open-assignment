@@ -120,9 +120,8 @@ export async function POST(req: Request) {
           const lastMessage = messages[messages.length - 1].content;
           const relevantPassages = await queryEmbeddingHandler(lastMessage, studyId);
 
-          const RELEVANCE_THRESHOLD = 0.5; // .filter(p => p.score >= RELEVANCE_THRESHOLD)
+          const RELEVANCE_THRESHOLD = 0.5;
           const contextPassages = relevantPassages.map(p => `[Page ${p.page}] ${p.text}`);
-          console.log(contextPassages);
           if (contextPassages.length > 0) {
             augmentedMessages.unshift({
               role: "system",
@@ -136,11 +135,36 @@ export async function POST(req: Request) {
           }
         }
 
-        const response = await openai.chat.completions.create({
+        const stream = await openai.chat.completions.create({
           model: "gpt-4o",
           messages: augmentedMessages,
+          stream: true,
         });
-        return NextResponse.json({result: response.choices[0].message});
+
+        const encoder = new TextEncoder();
+        const readable = new ReadableStream({
+          async start(controller) {
+            try {
+              for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                const streamData = JSON.stringify({ type: 'content', value: content }) + '\n';
+                controller.enqueue(encoder.encode(streamData));
+              }
+              controller.close();
+            } catch (error) {
+              console.error("Error in streaming response:", error);
+              controller.error(error);
+            }
+          }
+        });
+
+        return new Response(readable, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
       }
 
       case 'queryEmbedding': {
@@ -168,7 +192,6 @@ export async function POST(req: Request) {
 
       case 'createEmbedding': {
         const {passages, studyId} = data;
-        console.log("Received data for embedding:", {passages, studyId});
 
         if (!passages || !Array.isArray(passages)) {
           return NextResponse.json({error: 'Invalid or missing passages'}, {status: 400});
