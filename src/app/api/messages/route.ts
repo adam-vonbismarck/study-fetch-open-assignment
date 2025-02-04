@@ -65,6 +65,7 @@ async function queryEmbeddingHandler(query: string, studyId: string) {
 }
 
 async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
+  console.log(url)
   const response = await axios.get(url, { responseType: 'arraybuffer' });
   return new Uint8Array(response.data);
 }
@@ -166,10 +167,34 @@ export async function POST(req: Request) {
       }
 
       case 'createEmbedding': {
-        const {pdfURL, studyId, window} = data;
+        const {passages, studyId} = data;
+        console.log("Received data for embedding:", {passages, studyId});
+        
+        if (!passages || !Array.isArray(passages)) {
+          return NextResponse.json({ error: 'Invalid or missing passages' }, { status: 400 });
+        }
+        
+        if (!studyId || typeof studyId !== 'string') {
+          return NextResponse.json({ error: 'Invalid or missing studyId' }, { status: 400 });
+        }
+
         try {
-          const result = await createEmbeddingHandler(pdfURL, studyId, window);
-          return NextResponse.json(result);
+          const docs = passages.map((passage: Passage) => passage.page_content);
+          const embeddings = await embed(docs);
+          const index = pc.Index("study-fetch");
+
+          const records = passages.map((d: Passage, i: number) => ({
+            id: d.metadata.pid,
+            values: embeddings[i],
+            metadata: {
+              page: d.metadata.page,
+              annotations: d.metadata.annotations,
+              text: d.page_content,
+            },
+          }));
+
+          await index.namespace(studyId).upsert(records);
+          return NextResponse.json({ success: true });
         } catch (error: any) {
           console.error('Error creating embedding:', error);
           return NextResponse.json(

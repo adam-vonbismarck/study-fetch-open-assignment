@@ -41,41 +41,54 @@ export async function queryEmbedding(query: string, studyId: string) {
   return data.result;
 }
 
-export async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
+async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
   // Fetch the PDF from the web as an ArrayBuffer.
   const response = await axios.get(url, { responseType: 'arraybuffer' });
   // Convert the ArrayBuffer to a Uint8Array.
   return new Uint8Array(response.data);
 }
 
-export async function createEmbedding(pdfURL: string, studyId: string, window:  string) {
+export async function createEmbedding(pdfURL: string, studyId: string, window: string) {
+  console.log('Creating embedding for PDF:', pdfURL);
+  
+  try {
+    // Fetch and process PDF on client side
+    const pdfUint8Array = await fetchPdfBufferFromWeb(pdfURL);
+    console.log('Successfully fetched PDF buffer');
+    
+    const textPositions = await extractTextWithPositions(pdfUint8Array, window);
+    console.log('Successfully extracted text positions');
+    
+    const passages = await createPassages(textPositions, 1000);
+    console.log('Successfully created passages:', passages.length);
 
-  const pdfUint8Array = await fetchPdfBufferFromWeb(pdfURL);
-  console.log('Creating embedding for:', pdfUint8Array);
-  const textPositions = await extractTextWithPositions(pdfUint8Array, window);
-  const passages = await createPassages(textPositions, 1000);
+    // Send processed passages to server for embedding
+    const baseUrl = getBaseUrl();
+    const response = await fetch(`${baseUrl}/api/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        action: 'createEmbedding',
+        passages,
+        studyId,
+      }),
+    });
 
-  console.log('Passages:', passages);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Create embedding error:', errorText);
+      throw new Error('Failed to create embedding: ' + errorText);
+    }
 
-  const baseUrl = getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ 
-      action: 'createEmbedding',
-      passages,
-      studyId,
-    }),
-  });
-
-  if (!response.ok) {
-    console.error('Create embedding error:', await response.text());
-    throw new Error('Failed to create embedding');
+    const result = await response.json();
+    console.log('Successfully created embeddings');
+    return result;
+  } catch (error) {
+    console.error('Error in createEmbedding:', error);
+    throw error;
   }
-
-  return response.json();
 }
 
 export async function getAIResponse(messages: { role: string; content: string }[], studyId?: string) {

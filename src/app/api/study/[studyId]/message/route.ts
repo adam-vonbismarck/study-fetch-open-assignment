@@ -137,18 +137,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
     const pdfBuffer = await pdfResponse.arrayBuffer();
 
     // Highlight relevant passages in the PDF
-    const highlightedPdfBuffer  = await highlightPassages(
+    const { pdfBytes, highlightedPages }  = await highlightPassages(
       relevantPassages,
       currPdfUrl,
       new Uint8Array(pdfBuffer)
     );
-
+    console.log("Highlighted pages:", pdfBytes, highlightedPages);
     // Upload highlighted PDF to S3
     const highlightedPdfKey = `${studyId}/highlighted-${Date.now()}.pdf`;
     const putCommand = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: highlightedPdfKey,
-      Body: highlightedPdfBuffer.pdfBytes,
+      Body: pdfBytes,
       ContentType: 'application/pdf'
     });
 
@@ -165,7 +165,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
     // Return both the AI response and the new PDF URL
     return NextResponse.json({ 
       content: aiResponse.content,
-      highlightedPdfUrl: pdfUrl
+      highlightedPdfUrl: pdfUrl,
+      highlightedPages: highlightedPages
     });
 
   } catch (error) {

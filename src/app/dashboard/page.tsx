@@ -63,6 +63,8 @@ export default function Dashboard() {
   const [pdfUrl, setPdfUrl] = useState("")
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
+  pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
+
   useEffect(() => {
     fetchStudies()
   }, [])
@@ -152,7 +154,6 @@ export default function Dashboard() {
       setPdfUrl(study.pdfUrl)
       setCurrentStudy(study)
       setPageNumber(1)
-      console.log(study.pdfUrl)
       setTimeout(scrollToBottom, 100);
     } catch (error) {
       console.error("Error setting PDF URL:", error)
@@ -185,11 +186,15 @@ export default function Dashboard() {
         setStudies(prevStudies => [data.study, ...prevStudies])
 
         // Finally create the embedding
+        console.log('Creating embedding for:', data.study.pdfUrl);
         try {
-          await createEmbedding(data.study.pdfUrl, data.study.id, window.location.origin);
+          const origin = window.location.origin;
+          console.log('Using window origin:', origin);
+          await createEmbedding(data.study.pdfUrl, data.study.id, origin);
           console.log('PDF embedded successfully');
         } catch (embedError) {
           console.error('Error creating embedding:', embedError);
+          // Don't throw the error - we still want to show the PDF even if embedding fails
         }
       }
     } catch (error) {
@@ -300,7 +305,10 @@ export default function Dashboard() {
 
       const data = await response.json();
 
+      console.log(data);
+
       if (data.highlightedPages && data.highlightedPages.length > 0) {
+        pdfjs.GlobalWorkerOptions.workerSrc = window.location.origin + '/pdf.worker.min.mjs';
         setPdfUrl(data.highlightedPdfUrl);
       }
 
@@ -392,9 +400,10 @@ export default function Dashboard() {
                     setNumPages(pdf.numPages);
                   }}
                   loading={
-                    <div className="flex justify-center items-center h-full">
-                      <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"
-                      ></div>
+                    <div className="flex flex-col justify-center items-center h-full gap-4">
+                      <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent">
+                      </div>
+                      <div className="text-gray-400 ml-2">Loading PDF...</div>
                     </div>
                   }
                   error={
@@ -556,7 +565,7 @@ export default function Dashboard() {
               </Tooltip>
             </TooltipProvider>
             <Button onClick={() => {
-              sendMessage
+              sendMessage()
               setInputMessage("")
             }} disabled={!currentStudy || !inputMessage.trim() || isLoading}
             >
