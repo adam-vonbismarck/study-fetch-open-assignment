@@ -1,36 +1,130 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Study Fetch
 
-## Getting Started
+Study Fetch is an AI-powered PDF study assistant that helps users interact with their study materials through natural
+language conversations. The application features PDF viewing, text-to-speech capabilities, and intelligent responses
+based on the content of your documents.
 
-First, run the development server:
+## Features
+
+- PDF document upload and viewing
+- AI-powered chat interface for document interaction
+- Voice input support with speech-to-text
+- Text-to-speech capability for AI responses
+- Responsive design with automatic PDF scaling
+- User authentication with NextAuth.js
+- Markdown support with KaTeX for mathematical expressions
+
+## Tech Stack
+
+- **Frontend**: Next.js 13+ with App Router
+- **Backend**: Next.js API Routes
+- **Database**: MongoDB with Prisma ORM
+- **Authentication**: NextAuth.js
+- **AI/ML**: OpenAI GPT-4, Pinecone for vector embeddings
+- **PDF Processing**: pdf.js
+- **UI Components**: Tailwind CSS, shadcn/ui
+
+## Prerequisites
+
+- Node.js 18+
+- MongoDB instance
+- OpenAI API key
+- Pinecone API key and index
+- AWS S3 bucket (for PDF storage)
+
+## Known Issues
+
+- The application is slow to process message requests due to the AI model's latency
+- This could be sped up with caching or by optimising the code for highlighting PDFs
+- The application does not work on PDFs much longer than about 20 pages as chunking
+has not been implemented
+
+## Environment Setup
+
+1. Clone the repository:
+
+```bash
+git clone <repository-url>
+cd study-fetch
+```
+
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Create a `.env` file in the root directory an example file can be found in `.env.example`:
+
+## Database Setup
+
+1. Initialize Prisma with MongoDB:
+
+```bash
+npx prisma generate
+```
+
+2. Push the schema to your database:
+
+```bash
+npx prisma db push
+```
+
+The schema includes three main models:
+
+- `User`: Stores user authentication information
+- `Study`: Represents uploaded PDF documents
+- `Message`: Stores conversation history between users and AI
+
+## Development
+
+1. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Visit `http://localhost:3000` in your browser
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+study-fetch/
+├── src/
+│   ├── app/
+│   │   ├── api/           # API routes
+│   │   ├── dashboard/     # Main application page
+│   │   └── auth/         # Authentication pages
+│   ├── components/       # Reusable UI components
+│   ├── lib/             # Utility functions and helpers
+│   └── styles/          # Global styles
+├── prisma/
+│   └── schema.prisma    # Database schema
+└── public/             # Static assets
+```
 
-## Learn More
+## Key Features Implementation
 
-To learn more about Next.js, take a look at the following resources:
+### PDF Processing
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- PDFs are uploaded to AWS S3
+- Text is extracted and split into chunks
+- Chunks are embedded using OpenAI's embedding model, ada-002
+- Embeddings are stored in Pinecone for semantic search
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Chat Interface
 
-## Deploy on Vercel
+- Real-time conversation with AI
+- Context-aware responses using document embeddings
+- Voice input/output support using Web Speech API
+- Markdown rendering with mathematical expression support for AI responses
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Authentication
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Secure user authentication with NextAuth.js
+- Protected API routes and pages
+- User-specific document management
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details

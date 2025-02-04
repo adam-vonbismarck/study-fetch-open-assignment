@@ -35,7 +35,7 @@ async function highlightPassages(
 ): Promise<{ pdfBytes: Uint8Array, highlightedPages: number[] }> {
   // Load the PDF with pdf-lib.
   // load doc using pdf-js from url
-  const relevanceThreshold = 0.75;
+  const relevanceThreshold = 0.83;
   const getData = await fetchPdfBufferFromWeb(inputPdfData)
   const pdfDoc = await PDFDocument.load(getData);
   const pages = pdfDoc.getPages();
@@ -142,7 +142,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ studyId:
       currPdfUrl,
       new Uint8Array(pdfBuffer)
     );
-    console.log("Highlighted pages:", pdfBytes, highlightedPages);
     // Upload highlighted PDF to S3
     const highlightedPdfKey = `${studyId}/highlighted-${Date.now()}.pdf`;
     const putCommand = new PutObjectCommand({

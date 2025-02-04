@@ -1,9 +1,8 @@
 import {NextResponse} from 'next/server';
 import OpenAI from "openai";
 import {Pinecone} from "@pinecone-database/pinecone";
-import {Passage} from "@/lib/pdf-tools";
+import {createPassages, extractTextWithPositions, Passage} from "@/lib/pdf-tools";
 import {PrismaClient} from "@prisma/client";
-import {createPassages, extractTextWithPositions} from "@/lib/pdf-tools";
 import axios from "axios";
 
 const prisma = new PrismaClient();
@@ -33,11 +32,11 @@ async function embed(docs: string[]) {
       input: docs,
       encoding_format: "float",
     });
-    
+
     if (!embedding.data || embedding.data.length === 0) {
       throw new Error('No embeddings returned from OpenAI');
     }
-    
+
     return embedding.data.map(item => item.embedding);
   } catch (error: any) {
     console.error('Error generating embeddings:', error);
@@ -51,7 +50,7 @@ async function queryEmbeddingHandler(query: string, studyId: string) {
 
   const result = await index.namespace(studyId).query({
     vector: queryEmbedded[0],
-    topK: 4,
+    topK: 15,
     includeMetadata: true
   });
 
@@ -66,7 +65,7 @@ async function queryEmbeddingHandler(query: string, studyId: string) {
 
 async function fetchPdfBufferFromWeb(url: string): Promise<Uint8Array> {
   console.log(url)
-  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  const response = await axios.get(url, {responseType: 'arraybuffer'});
   return new Uint8Array(response.data);
 }
 
@@ -90,7 +89,7 @@ async function createEmbeddingHandler(pdfURL: string, studyId: string, window: s
   }));
 
   await index.namespace(studyId).upsert(records);
-  return { success: true };
+  return {success: true};
 }
 
 async function saveMessages(messages: { content: string; role: string; studyId: string }[]) {
@@ -116,22 +115,23 @@ export async function POST(req: Request) {
       case 'getAIResponse': {
         const {messages, studyId} = data;
         let augmentedMessages = [...messages];
-        
+
         if (studyId) {
           const lastMessage = messages[messages.length - 1].content;
           const relevantPassages = await queryEmbeddingHandler(lastMessage, studyId);
-          
-          const RELEVANCE_THRESHOLD = 0.5;
-          const contextPassages = relevantPassages
-            .filter(p => p.score >= RELEVANCE_THRESHOLD)
-            .map(p => `[Page ${p.page}] ${p.text}`);
 
+          const RELEVANCE_THRESHOLD = 0.5; // .filter(p => p.score >= RELEVANCE_THRESHOLD)
+          const contextPassages = relevantPassages.map(p => `[Page ${p.page}] ${p.text}`);
+          console.log(contextPassages);
           if (contextPassages.length > 0) {
             augmentedMessages.unshift({
               role: "system",
               content: "You are a Tutor assistant designed to get content from PDFs and talk about it. Use the" +
                 " PDF context over your own knowledge and say when you have to get more information from outside" +
-                " sources. Here is relevant context from the PDF document:\n\n" + contextPassages.join('\n\n')
+                " sources. If the user asks for context about the PDF, you should not tell them that you cannot" +
+                " view the PDF directly as this is the relevant context. Here" +
+                " is relevant context from the PDF" +
+                " document:\n\n" + contextPassages.join('\n\n')
             });
           }
         }
@@ -145,13 +145,13 @@ export async function POST(req: Request) {
 
       case 'queryEmbedding': {
         const {query, studyId} = data;
-        
+
         if (!query || typeof query !== 'string') {
-          return NextResponse.json({ error: 'Invalid or missing query parameter' }, { status: 400 });
+          return NextResponse.json({error: 'Invalid or missing query parameter'}, {status: 400});
         }
-        
+
         if (!studyId || typeof studyId !== 'string') {
-          return NextResponse.json({ error: 'Invalid or missing studyId parameter' }, { status: 400 });
+          return NextResponse.json({error: 'Invalid or missing studyId parameter'}, {status: 400});
         }
 
         try {
@@ -169,13 +169,13 @@ export async function POST(req: Request) {
       case 'createEmbedding': {
         const {passages, studyId} = data;
         console.log("Received data for embedding:", {passages, studyId});
-        
+
         if (!passages || !Array.isArray(passages)) {
-          return NextResponse.json({ error: 'Invalid or missing passages' }, { status: 400 });
+          return NextResponse.json({error: 'Invalid or missing passages'}, {status: 400});
         }
-        
+
         if (!studyId || typeof studyId !== 'string') {
-          return NextResponse.json({ error: 'Invalid or missing studyId' }, { status: 400 });
+          return NextResponse.json({error: 'Invalid or missing studyId'}, {status: 400});
         }
 
         try {
@@ -194,7 +194,7 @@ export async function POST(req: Request) {
           }));
 
           await index.namespace(studyId).upsert(records);
-          return NextResponse.json({ success: true });
+          return NextResponse.json({success: true});
         } catch (error: any) {
           console.error('Error creating embedding:', error);
           return NextResponse.json(
