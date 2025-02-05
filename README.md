@@ -4,6 +4,8 @@ Study Fetch is an AI-powered PDF study assistant that helps users interact with 
 language conversations. The application features PDF viewing, text-to-speech capabilities, and intelligent responses
 based on the content of your documents.
 
+![demo.jpg](demo.jpg)
+
 ## Features
 
 - PDF document upload and viewing
@@ -124,7 +126,3 @@ study-fetch/
 - Secure user authentication with NextAuth.js
 - Protected API routes and pages
 - User-specific document management
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details
